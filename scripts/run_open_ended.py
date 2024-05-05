@@ -66,9 +66,9 @@ class AdaptiveNGramWarper(LogitsWarper):
         self.cond_ents.append(-(normalized * p).nansum(-1, keepdim=True).item())
         
         for model, scale in zip(reversed(self.models), self.scaling_factors):
-            print(input_ids[0])
+            #print(input_ids[0])
             counts = model(input_ids[0])
-            print(counts)
+            #print(counts)
             if sum(counts) > 0:
                 self.weight_info_used.append(mn)
                 tf = sum(counts.values())
@@ -98,14 +98,14 @@ class BoWWarper(LogitsWarper):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", help="Generative model name with Transformers generate interface")
-    parser.add_argument("--text_input", help="Text to train ngram model on, jsonl")
-    parser.add_argument("--prompts", help="Text prompts file")
-    parser.add_argument("--story_prompts",help="JSON story prompts file")
+    parser.add_argument("--train", help="Text to train ngram model on, jsonl")
+    parser.add_argument("--test", help="Text to complete, jsonl")
     parser.add_argument("--scalings", help="JSON scalings file")
     parser.add_argument("--out", help="JSONl out file")
     parser.add_argument("--do_sample", type=int)
     parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--random_state", type=int, default=1)
+    parser.add_argument("--prefix_proportion", type=float, default=0.5)
 
     args = parser.parse_args()
 
@@ -116,35 +116,34 @@ if __name__ == "__main__":
     model = MistralForCausalLM.from_pretrained(args.model)
 
     text_split = []
-    with open(args.text_input, "rt") as s_in:
+    with open(args.train, "rt") as s_in:
         for line in s_in:
             j_line = json.loads(line)
             text_split.append(j_line["text"])
         tokenized_text = tokenizer(text_split).input_ids
+
+    prefixes = []
+    golds = []
+    prefix_texts = []
+    with open(args.test, "rt") as t_in:
+        for line in t_in:
+            j_line = json.loads(line)
+            tokenized = tokenizer(j_line["text"]).input_ids
+            prefix = tokenized[:int(len(tokenized)*args.prefix_proportion)]
+            prefixes.append(prefix)
+            gold = tokenized[int(len(tokenized)*args.prefix_proportion):]
+            #prefixes.append(tokenizer.prepare_for_model(prefix, return_tensors="pt"))
+            golds.append(tokenizer.decode(gold))
+            prefix_texts.append(tokenizer.decode(prefix))
     
-    with open(args.prompts, "rt") as p_i:
-        prompts = p_i.readlines()
-
-    with open(args.story_prompts, "rt") as s_pi:
-        story_prompts = json.loads(s_pi.read)
-
     with open(args.scalings, "rt") as s_i:
         scalings = json.loads(s_i.read())
 
-    #combine author specific and story prompts
-    combined_prompts = []
-    for a_p in prompts:
-        for s_p in story.prompts["prompts"]:
-            print(a_p)
-            print(s_p)
-            combined_prompts.append(tokenizer.apply_chat_template([{"role": "user", "content": a_p + s_p + ":"}], return_tensors="pt")
-            input()
-
-    #model_inputs = tokenizer.apply_chat_template(prompts, return_tensors="pt")
     bg = AdaptiveNGramWarper(tokenized_text)
 
     with open(args.out, "wt") as j_out:
-        for model_inputs in combined_prompts:
+        for p, pt, g in zip(prefixes, prefix_texts, golds):
+            #print(torch.tensor([p]))
             for scaling in scalings:
                 bg.was_scaled = [0]
                 bg.weights = None
@@ -153,11 +152,9 @@ if __name__ == "__main__":
                 bg.scaling_factors = scaling
                 print(bg.scaling_factors)
                 if args.top_k != 0:
-                    out = model.generate(model_inputs, max_new_tokens=512, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id, top_k=args.top_k)
+                    out = model.generate(torch.tensor([p]), max_new_tokens=512, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id, top_k=args.top_k)
                 else:
-                    out  = model.generate(model_inputs, max_new_tokens=512, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id)
+                    out  = model.generate(torch.tensor([p]), max_new_tokens=512, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id)
                 decoded = tokenizer.batch_decode(out.sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
                 print(decoded)
-                j_out.write(json.dumps({"text": decoded, "scaling_factor": bg.scaling_factors, "selected_was_weighted": bg.was_scaled, "ngram_weight_used": bg.weight_info_used, "cond_ents":bg.cond_ents})+"\n")
-
-
+                j_out.write(json.dumps({"text": decoded, "gold": g, "prefix": pt, "scaling_factor": bg.scaling_factors, "selected_was_weighted": bg.was_scaled, "ngram_weight_used": bg.weight_info_used, "cond_ents":bg.cond_ents})+"\n")
