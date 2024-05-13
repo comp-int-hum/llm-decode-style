@@ -11,7 +11,7 @@ import re
 from collections import defaultdict, Counter
 import math
 import argparse
-
+import logging
 
 
 def ngram(text, grams):
@@ -104,16 +104,19 @@ if __name__ == "__main__":
     parser.add_argument("--out", help="JSONl out file")
     parser.add_argument("--do_sample", type=int)
     parser.add_argument("--top_k", type=int, default=0)
+    parser.add_argument("--temperature",type=float,default=0.0)
     parser.add_argument("--random_state", type=int, default=1)
-    parser.add_argument("--prefix_proportion", type=float, default=0.5)
 
     args = parser.parse_args()
 
+    log_format = "%(asctime)s::%(filename)s::%(message)s"
+    logging.basicConfig(level='INFO', format=log_format)
     do_sample = bool(args.do_sample)
 
+    device = device = "cpu"
     set_seed(args.random_state)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
-    model = MistralForCausalLM.from_pretrained(args.model)
+    model = MistralForCausalLM.from_pretrained(args.model).to(device)
 
     text_split = []
     with open(args.train, "rt") as s_in:
@@ -128,12 +131,13 @@ if __name__ == "__main__":
     with open(args.test, "rt") as t_in:
         for line in t_in:
             j_line = json.loads(line)
-            tokenized = tokenizer(j_line["text"]).input_ids
-            prefix = tokenized[:int(len(tokenized)*args.prefix_proportion)]
+            print(j_line)
+            prefix = tokenizer(j_line["text"]).input_ids
+            #prefix = tokenized[:int(len(tokenized)*args.prefix_proportion)]
             prefixes.append(prefix)
-            gold = tokenized[int(len(tokenized)*args.prefix_proportion):]
+            #gold = tokenized[int(len(tokenized)*args.prefix_proportion):]
             #prefixes.append(tokenizer.prepare_for_model(prefix, return_tensors="pt"))
-            golds.append(tokenizer.decode(gold))
+            golds.append(j_line["gold"])
             prefix_texts.append(tokenizer.decode(prefix))
     
     with open(args.scalings, "rt") as s_i:
@@ -150,11 +154,13 @@ if __name__ == "__main__":
                 bg.weight_info_used = []
                 bg.cond_ents = []
                 bg.scaling_factors = scaling
-                print(bg.scaling_factors)
+                logging.info(bg.scaling_factors)
                 if args.top_k != 0:
-                    out = model.generate(torch.tensor([p]), max_new_tokens=512, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id, top_k=args.top_k)
+                    out = model.generate(torch.tensor([p]).to(device), max_new_tokens=256, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=True, pad_token_id=tokenizer.eos_token_id, top_k=args.top_k)
+                elif args.temperature != 0:
+                    out = model.generate(torch.tensor([p]).to(device), max_new_tokens=256, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=True, pad_token_id=tokenizer.eos_token_id, temperature=args.temperature)
                 else:
-                    out  = model.generate(torch.tensor([p]), max_new_tokens=512, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id)
+                    out  = model.generate(torch.tensor([p]).to(device), max_new_tokens=256, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=True, pad_token_id=tokenizer.eos_token_id)
                 decoded = tokenizer.batch_decode(out.sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-                print(decoded)
+                logging.info(decoded)
                 j_out.write(json.dumps({"text": decoded, "gold": g, "prefix": pt, "scaling_factor": bg.scaling_factors, "selected_was_weighted": bg.was_scaled, "ngram_weight_used": bg.weight_info_used, "cond_ents":bg.cond_ents})+"\n")

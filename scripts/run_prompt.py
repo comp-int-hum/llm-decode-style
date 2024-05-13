@@ -11,7 +11,7 @@ import re
 from collections import defaultdict, Counter
 import math
 import argparse
-
+import logging
 
 
 def ngram(text, grams):
@@ -66,9 +66,9 @@ class AdaptiveNGramWarper(LogitsWarper):
         self.cond_ents.append(-(normalized * p).nansum(-1, keepdim=True).item())
         
         for model, scale in zip(reversed(self.models), self.scaling_factors):
-            print(input_ids[0])
+            #print(input_ids[0])
             counts = model(input_ids[0])
-            print(counts)
+            #print(counts)
             if sum(counts) > 0:
                 self.weight_info_used.append(mn)
                 tf = sum(counts.values())
@@ -109,6 +109,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    log_format = "%(asctime)s::%(filename)s::%(message)s"
+    logging.basicConfig(level='INFO', format=log_format)
+    
     do_sample = bool(args.do_sample)
 
     set_seed(args.random_state)
@@ -126,7 +129,7 @@ if __name__ == "__main__":
         prompts = p_i.readlines()
 
     with open(args.story_prompts, "rt") as s_pi:
-        story_prompts = json.loads(s_pi.read)
+        story_prompts = json.loads(s_pi.read())
 
     with open(args.scalings, "rt") as s_i:
         scalings = json.loads(s_i.read())
@@ -134,11 +137,11 @@ if __name__ == "__main__":
     #combine author specific and story prompts
     combined_prompts = []
     for a_p in prompts:
-        for s_p in story.prompts["prompts"]:
+        for s_p in story_prompts["prompts"]:
             print(a_p)
             print(s_p)
-            combined_prompts.append(tokenizer.apply_chat_template([{"role": "user", "content": a_p + s_p + ":"}], return_tensors="pt")
-            input()
+            combined_prompts.append(tokenizer.apply_chat_template([{"role": "user", "content": a_p + s_p + ":"}], return_tensors="pt"))
+            
 
     #model_inputs = tokenizer.apply_chat_template(prompts, return_tensors="pt")
     bg = AdaptiveNGramWarper(tokenized_text)
@@ -151,13 +154,13 @@ if __name__ == "__main__":
                 bg.weight_info_used = []
                 bg.cond_ents = []
                 bg.scaling_factors = scaling
-                print(bg.scaling_factors)
+                logging.info(bg.scaling_factors)
                 if args.top_k != 0:
-                    out = model.generate(model_inputs, max_new_tokens=512, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id, top_k=args.top_k)
+                    out = model.generate(model_inputs, max_new_tokens=256, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id, top_k=args.top_k)
                 else:
-                    out  = model.generate(model_inputs, max_new_tokens=512, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id)
+                    out  = model.generate(model_inputs, max_new_tokens=256, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id)
                 decoded = tokenizer.batch_decode(out.sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
-                print(decoded)
+                logging.info(decoded)
                 j_out.write(json.dumps({"text": decoded, "scaling_factor": bg.scaling_factors, "selected_was_weighted": bg.was_scaled, "ngram_weight_used": bg.weight_info_used, "cond_ents":bg.cond_ents})+"\n")
 
 

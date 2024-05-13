@@ -25,25 +25,26 @@ import pickle
 vars = Variables("custom.py")
 vars.AddVariables(
     ("OUTPUT_WIDTH", "", 5000),
-    ("TEXTS", "", ["remus", "marietta", "dooley"]),
+    ("TEXTS", "", ["remus", "dooley"]),
     ("DATA_DIR","","data/"),
-    #("TEXTS", "", ["data/remus.txt", "data/marietta.txt", "data/dooley.txt"]),
+    #("TEXTS", "", ["data/remus.txt", "data/dooley.txt"]),
     ("GEN_MODELS","", ["mistralai/Mistral-7B-Instruct-v0.2"]),
     ("STORYPROMPTS_LOC","","data/writingPrompts.tar.gz"),
     ("N_STORY_PROMPTS", "", 2),
     ("EVAL_MODEL","", ["mistralai/Mistral-7B-v0.1"]),
-    #("PROMPTS", "", ["story_prompts.json", "essay_prompts.json", "essay_prompts.json"]),
     ("NG_SCALINGS", "", ["ng_scalings.json"]),
-    ("GEN_MODEL_PARAMS", "", [{"do_sample": 0, "top_k":0}, {"do_sample": 1, "top_k":0}, {"do_sample": 1, "top_k": 50}]),
-    ("RANDOM_STATE", "", 30),
-    ("TRAIN_SIZE", "", 0.998),
-    ("USE_GRID","",0),
+    ("GEN_MODEL_PARAMS", "", [{"do_sample": 1, "top_k":0, "temperature": 0.0}, {"do_sample": 1, "top_k": 40, "temperature":0.0}, {"do_sample": 1, "top_k":0, "temperature":0.5}]),
+    ("RANDOM_STATE", "", 20),
+    ("TRAIN_SIZE", "", 0.95),
+    ("USE_GRID","",1),
     ("GRID_TYPE","", "slurm"),
+    #("GRID_QUEUE","", "a100"),
+    #("GRID_ACCOUNT","", "tlippi1_gpu"),
     ("GRID_GPU_COUNT","", 0),
     ("GRID_MEMORY", "", "64G"),
     ("GRID_LABEL", "", "NGStyle"),
-    ("GRID_TIME", "", "72:00:00"),
-    ("TEST_PROPORTION","",0.5)
+    ("GRID_TIME", "", "48:00:00"),
+
     #("FOLDS", "", 1),
 )
 
@@ -58,10 +59,10 @@ env = Environment(
         "CreateData": Builder(
             action="python scripts/create_json_text.py --text_input ${SOURCES[0]} --out ${TARGETS[0]}"
         ),
-	"LoadPrompts": Builder(action="python scripts/generate_prompts.py --prompts_input ${STORYPROMPTS_LOC} -n ${N_STORY_PROMPTS} --prompt_out ${TARGETS[0]} --target_out ${TARGETS[1]}"),
+	"LoadPrompts": Builder(action="python scripts/generate_prompts.py --prompts_input ${STORYPROMPTS_LOC} --n ${N_STORY_PROMPTS} --prompt_out ${TARGETS[0]} --target_out ${TARGETS[1]}"),
         "RunPrompt": Builder(action="python scripts/run_prompt.py --model ${MODEL} --text_input ${SOURCES[0]} --prompts ${SOURCES[1]} --scalings ${SOURCES[2]} --out ${TARGETS[0]} --do_sample ${DO_SAMPLE} --top_k ${TOP_K} --random_state ${RANDOM_STATE} --story_prompts ${SOURCES[3]}"),
         "SplitForOpenEnded": Builder(action="python scripts/shuffle_data.py --input ${SOURCES[0]} --outputs ${TARGETS} --train_size ${TRAIN_SIZE} --random_state ${RANDOM_STATE}"),
-        "RunOpenEnded": Builder(action="python scripts/run_open_ended.py --model ${MODEL} --train ${SOURCES[0]} --test ${SOURCES[1]} --scalings ${SOURCES[2]} --out ${TARGETS[0]} --do_sample ${DO_SAMPLE} --top_k ${TOP_K} --random_state ${RANDOM_STATE} --prefix_proportion ${TEST_PROPORTION}"),
+        "RunOpenEnded": Builder(action="python scripts/run_open_ended.py --model ${MODEL} --train ${SOURCES[0]} --test ${SOURCES[1]} --scalings ${SOURCES[2]} --out ${TARGETS[0]} --do_sample ${DO_SAMPLE} --top_k ${TOP_K} --temperature ${TEMP} --random_state ${RANDOM_STATE}"),
         "EvalPerplexity": Builder(action="python scripts/evaluate_perplexity.py --model ${EVAL_MODEL} --input ${SOURCES[0]} --output ${TARGETS[0]}")
     }
 )
@@ -73,40 +74,47 @@ text_perps = []
 gen_perps = []
 
 
-story_prompts, prompt_targets = env.LoadPrompts(["work/prompts.jsonl", "work/targets.jsonl"], [])
+#story_prompts, prompt_targets = env.LoadPrompts(["work/prompts.jsonl", "work/targets.jsonl"], [])
 for text in env["TEXTS"]:
     text_ins.append(env.CreateData(["work/${TEXT}/text.jsonl"], [env["DATA_DIR"]+text+".txt"], TEXT=text))
     #text_perps.append(env.EvalPerplexity(["work/${TEXT}/perplexities.jsonl"], [text_ins[-1]], TEXT=text))
-    
+"""    
 for model_type in env["GEN_MODELS"]:
     for text_name, text in zip(env["TEXTS"], text_ins):
         for scaling in env["NG_SCALINGS"]:
             for pn, params in enumerate(env["GEN_MODEL_PARAMS"]):
-                res.append(env.RunPrompt(["work/${MODEL}/${TEXT}/${PARAM_NUM}/results.jsonl"],
+                res.append(env.RunPrompt(["work/${MODEL}/${TEXT_NAME}/${PARAM_NUM}/results.jsonl"],
                                 [text,env["DATA_DIR"]+text_name+"_prompts.txt",env["DATA_DIR"]+scaling, story_prompts],
                                 MODEL = model_type,
                                 TEXT = text,
                                 DO_SAMPLE = params["do_sample"],
                                 TOP_K = params["top_k"],
-                                PARAM_NUM = pn
+                                PARAM_NUM = pn,
+				TEXT_NAME = text_name
                                 
                         )
-                )
-#for open_ended in env["EVAL_MODEL"]:
-#    for text in text_ins:
-#        #test train split
-#        train, test = env.SplitForOpenEnded(["work/${MODEL}/${TEXT}/train.jsonl", "work/${MODEL}/${TEXT}/test.jsonl"], [text], MODEL=open_ended, TEXT=text)
-#        for scaling in env["NG_SCALINGS"]:
-#            for pn, params in enumerate(env["GEN_MODEL_PARAMS"]):
-#                open_res.append(env.RunOpenEnded(["work/${MODEL}/${TEXT}/${PARAM_NUM}/results.jsonl"],
-#                [train,test, env["DATA_DIR"]+scaling],
-#                MODEL = open_ended,
-#                TEXT = text,
-#                DO_SAMPLE = params["do_sample"],
-#                TOP_K = params["top_k"],
-#                PARAM_NUM = pn
-#               )
-#        )
+)
+"""
+for open_ended in env["EVAL_MODEL"]:
+    for text,text_name in zip(text_ins, env["TEXTS"]):
+        #test train split
+        train, test = env.SplitForOpenEnded(["work/${MODEL}/${TEXT_NAME}/train.jsonl", "work/${MODEL}/${TEXT_NAME}/test.jsonl"], [text], MODEL=open_ended, TEXT=text, TEXT_NAME=text_name)
+        for scaling in env["NG_SCALINGS"]:
+            for pn, params in enumerate(env["GEN_MODEL_PARAMS"]):
+                open_res.append(env.RunOpenEnded(["work/${MODEL}/${TEXT_NAME}/${PARAM_NUM}/results.jsonl"],
+                [train,test, env["DATA_DIR"]+scaling],
+                MODEL = open_ended,
+                TEXT = text,
+                DO_SAMPLE = params["do_sample"],
+                TOP_K = params["top_k"],
+		TEMP = params["temperature"],
+                PARAM_NUM = pn,
+		TEXT_NAME = text_name,
+		#GRID_GPU_COUNT=1,
+		#GRID_ACCOUNT="tlippin1_gpu",
+		#GRID_QUEUE="a100"
+               )
+        )
 
 
 
