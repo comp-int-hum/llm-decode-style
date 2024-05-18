@@ -143,7 +143,6 @@ if __name__ == "__main__":
             combined_prompts.append(tokenizer.apply_chat_template([{"role": "user", "content": a_p + s_p + ":"}], return_tensors="pt"))
             
 
-    #model_inputs = tokenizer.apply_chat_template(prompts, return_tensors="pt")
     bg = AdaptiveNGramWarper(tokenized_text)
 
     with open(args.out, "wt") as j_out:

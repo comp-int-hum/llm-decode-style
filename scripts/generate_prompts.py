@@ -30,5 +30,7 @@ if __name__ == "__main__":
         t_out.write(json.dumps({"prompts": [re.sub(r"\[\s\S*\s\]","",p.decode("utf-8")) for p in p_m[:args.n]]}))
         
     with open(args.target_out, "wt") as targ_out:
-        targ_out.write(json.dumps({"targets": [re.sub(r"\[\s\S*\s\]","",t.decode("utf-8")) for t in e_m[:args.n]]}))
+        for t_o in e_m[:args.n]:
+            targ_out.write(json.dumps({"text": re.sub(r"\[\s\S*\s\]","",t_o.decode("utf-8"))})+"\n")
+        #targ_out.write(json.dumps({"targets": [re.sub(r"\[\s\S*\s\]","",t.decode("utf-8")) for t in e_m[:args.n]]}))
 
