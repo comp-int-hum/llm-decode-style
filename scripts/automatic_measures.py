@@ -34,11 +34,11 @@ def zipf_coef(tokens):
     s_best = scipy.optimize.minimize_scalar(loss_fn, [0.1, 3.0])
     return s_best.x
 
-def find_ngrams(t, n):
-        return zip(*[t[i:] for i in range(n)])
-
 
 def ngram_diversity(tokens, top_n=4):
+
+    def find_ngrams(t,n):
+        return zip(*[t[i:] for i in range(n)])
 
     unique_len = []
     gram_len = []
@@ -143,20 +143,24 @@ if __name__ == "__main__":
                 if len(generated_orig) > len(j_line["ngram_weight_used"]):
                     generated_orig = generated_orig[1:]
                 res["ngram_tokens"] = [tk.decode(e) for i,e in zip(j_line["selected_was_weighted"], generated_orig) if i > 0]
+                res["unscaled_tokens"] = [tk.decode(e) for i,e in zip(j_line["selected_was_weighted"], generated_orig) if i == 0]
                 res_by_scaling[scaling].append(res)
             with open(args.output, "wt") as j_out:
                 for s, res in res_by_scaling.items():
                     tokens = []
                     ngram_tokens = []
                     per_token_perp = []
+                    unscaled_tokens = []
                     for r in res:
                         tokens += r["generated"]
                         ngram_tokens += r["ngram_tokens"]
+                        unscaled_tokens += r["unscaled_tokens"]
                         per_token_perp += r["per_token_perp"]
                     ds = [ngram_diversity(r["generated"]) for r in res]
                     perps = [r["perp"] for r in res]
-                    ngram_tokens = Counter(ngram_tokens).most_common(20)
-                    j_out.write(json.dumps({"Scaling": s, "Zipf": zipf_coef(tokens), "D": sum(ds)/len(ds), "Perplexity": sum(perps)/len(perps), "Per Token Perp": sum(per_token_perp)/len(per_token_perp), "Ngram tokens": ngram_tokens})+"\n")
+                    ngram_tokens = Counter(ngram_tokens).most_common(40)
+                    unscaled_tokens = Counter(unscaled_tokens).most_common(40)
+                    j_out.write(json.dumps({"Scaling": s, "Zipf": zipf_coef(tokens), "D": sum(ds)/len(ds), "Perplexity": sum(perps)/len(perps), "Per Token Perp": sum(per_token_perp)/len(per_token_perp), "Ngram tokens": ngram_tokens, "Unscaled tokens":unscaled_tokens})+"\n")
 
             
 

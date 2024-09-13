@@ -13,7 +13,7 @@ if __name__ == "__main__":
 
     with open(args.text_input, "rt") as s_in:
         text = s_in.read()
-        text_split = [s for s in re.split("\n\n",text) if not any([c.isdigit() for c in s]) and len(s)>=args.min_chars and (s[0]!="[" and s[-1]!="]") and "CHAPTER" not in s]
+        text_split = [s.replace("\n"," ") for s in re.split("\n\n",text) if not any([c.isdigit() for c in s]) and len(s)>=args.min_chars and (s[0]!="[" and s[-1]!="]") and "CHAPTER" not in s]
 
     with open(args.out, "wt") as t_out:
         for c in text_split:
