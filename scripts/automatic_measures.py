@@ -21,6 +21,7 @@ def zipf_coef(tokens):
         count_counter.items(),
         key = lambda pair: pair[1],
         reverse=True)
+    
     word_counts, freq_of_counts = np.asarray(count_counter).T
 
     def nll_zipf(s, word_counts, freq_of_counts):
@@ -34,11 +35,14 @@ def zipf_coef(tokens):
     s_best = scipy.optimize.minimize_scalar(loss_fn, [0.1, 3.0])
     return s_best.x
 
+def find_ngrams(t,n):
+    return zip(*[t[i:] for i in range(n)])
+
 
 def ngram_diversity(tokens, top_n=4):
 
-    def find_ngrams(t,n):
-        return zip(*[t[i:] for i in range(n)])
+    #def find_ngrams(t,n):
+    #    return zip(*[t[i:] for i in range(n)])
 
     unique_len = []
     gram_len = []
@@ -50,18 +54,6 @@ def ngram_diversity(tokens, top_n=4):
 
     
     return float(sum(unique_len))/sum(gram_len)
-
-def rep(tokens, l=[16,32]):
-    res = []
-    for ln in l:
-        seg_res = []
-        segs = find_ngrams(tokens, ln)
-        for seq in segs:
-            print(seq)
-            seg_res.append( float(1)/len(list(set(seq))))
-        res.append(sum(seg_res)/len(seg_res))
-    return sum(res)/len(res)
-
 
 
 def retokenize(orig_tok):
@@ -83,48 +75,65 @@ def retokenize(orig_tok):
 def c_tokenize(segment, mode, tk):
     if mode == "spacy":
         r_t = []
-        for sent in tk(segment.lower()).sents:
+        for sent in tk(segment).sents:
             r_t += retokenize(tk.tokenizer.explain(sent.text))
-    elif mode == "mistral":
-        r_t = tk.tokenize(segment.lower())
+    else:
+        r_t = tk.tokenize(segment)
 
-    return [r for r in r_t if any([c for c in r if c not in string.punctuation])]
+    return r_t
         
+
+class eval_gen:
+    def __init__(self, tname):
+        self.tfile = open(tname, "rt")
+    def __iter__(self):
+        self.tfile.seek(0)
+        for line in self.tfile:
+            yield line
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", help="text for original texts, open for open generation, instruct for prompted")
-    parser.add_argument("--tokenizer", default="mistral")
+    parser.add_argument("--tokenizer", nargs="+", default=["spacy"])
     parser.add_argument("--input", help="jsonl to evaluate")
     parser.add_argument("--output", help="Report out")
 
 
     args = parser.parse_args()
+    with open(args.output, "wt") as eval_out:
+        eval_in = eval_gen(args.input)
+        for tname in args.tokenizer:
+            if tname == "spacy":
+                tk = spacy.load("en_core_web_sm", exclude=["ner"])
+                tk.tokenizer.rules = {key: value for key, value in tk.tokenizer.rules.items() if "'" not in key and "’" not in key and "‘" not in key}
+            else:
+                tk = AutoTokenizer.from_pretrained(tname)
+
+            if args.mode == "text":
+                tokens = []
+                d = []
+                reps = []
+                for line in eval_in:
+                    j_line = json.loads(line)
+                    segment = c_tokenize(j_line["text"], tname, tk)
+                    tokens += segment
+                    d.append(ngram_diversity(segment))
+                    #reps.append(rep(segment))
+                eval_out.write(json.dumps({"name": tname, "N": len(tokens), "Zipf": zipf_coef(tokens), "D_avg": sum(d)/len(d), "D_full": ngram_diversity(tokens)})+"\n")
+
+            elif args.mode == "instruct":
+                res_by_scaling = defaultdict(list)
+                for line in eval_in:
+                    j_line = json.loads(line)
+                    generated = c_tokenize(j_line["text"].split("[/INST]")[1], tname, tk)
+                    print(generated)
+                    print(len(generated))
+                    print(len(j_line["selected_was_weighted"]))
+                    print(len(j_line["ngram_weight_used"]))
+                    input()
+                    
     
-    if args.tokenizer == "spacy":
-        tk = spacy.load("en_core_web_sm", exclude=["ner"])
-        tk.tokenizer.rules = {key: value for key, value in tk.tokenizer.rules.items() if "'" not in key and "’" not in key and "‘" not in key}
-    elif args.tokenizer == "mistral":
-        tk = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-v0.1")
-                              
-    with open(args.input, "rt") as eval_in, open(args.output, "wt") as eval_out:
-        if args.mode == "text":
-            tokens = []
-            d = []
-            reps = []
-            avg_perp = []
-            per_token_perp = []
-            for line in eval_in:
-                j_line = json.loads(line)
-                segment = c_tokenize(j_line["text"], args.tokenizer, tk)
-                tokens += segment
-                per_token_perp += j_line["per_token_perp"]
-                d.append(ngram_diversity(segment))
-                avg_perp.append(j_line["perp"])
-            print(zipf_coef(tokens))
-            print(sum(d)/len(d))
-            print(sum(avg_perp)/len(avg_perp))
-            
+"""            
             with open(args.output, "wt") as j_out:
                 j_out.write(json.dumps({"N": len(tokens), "Zipf":zipf_coef(tokens), "D": sum(d)/len(d), "Perplexity": sum(avg_perp)/len(avg_perp), "Per Token Perp":sum(per_token_perp)/len(per_token_perp) })+"\n")
                 
@@ -173,3 +182,4 @@ if __name__ == "__main__":
                     print("Cont: " + j_line["text"][len(j_line["prefix"][4:]):])
                     print("Gold: " + j_line["gold"])
                     input()
+"""

@@ -69,12 +69,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", help="Generative model name with Transformers generate interface")
     parser.add_argument("--ngram", help="NLTK Ngram model, pkl")
-    parser.add_argument("--prompts", help="Text prompts file")
-    parser.add_argument("--story_prompts",help="JSON story prompts file")
+    parser.add_argument("--prompts", help="Jsonl prompts file")
+    #parser.add_argument("--story_prompts",help="JSON story prompts file")
+    parser.add_argument("--n_prompt_sets",type=int, help="Number of storyprompt prompt sets to generate over")
     parser.add_argument("--scalings", help="JSON scalings file")
     parser.add_argument("--out", help="JSONl out file")
     parser.add_argument("--do_sample", type=int)
-    parser.add_argument("--top_k", type=int, default=0)
+    #parser.add_argument("--top_k", type=int, default=0)
     parser.add_argument("--random_state", type=int, default=1)
 
     args = parser.parse_args()
@@ -83,6 +84,7 @@ if __name__ == "__main__":
     logging.basicConfig(level='INFO', format=log_format)
     
     do_sample = bool(args.do_sample)
+    print(do_sample)
 
     set_seed(args.random_state)
     tokenizer = AutoTokenizer.from_pretrained(args.model)
@@ -91,40 +93,42 @@ if __name__ == "__main__":
     with open(args.ngram, "rb") as ng_in:
         ngram = pickle.load(ng_in)
 
-    
     with open(args.prompts, "rt") as p_i:
-        prompts = p_i.readlines()
+        prompts = json.loads(p_i.read())
+    
+    #with open(args.prompts, "rt") as p_i:
+    #    prompts = p_i.readlines()
 
-    with open(args.story_prompts, "rt") as s_pi:
-        story_prompts = json.loads(s_pi.read())
+    #with open(args.story_prompts, "rt") as s_pi:
+    #    story_prompts = json.loads(s_pi.read())
 
     with open(args.scalings, "rt") as s_i:
         scalings = json.loads(s_i.read())
+    
+
+    #combine base and story prompts along with scalings
+    #combined_prompts = []
+        
 
     #combine author specific and story prompts
-    combined_prompts = []
-    for a_p in prompts:
-        for s_p in story_prompts["prompts"]:
-            print(a_p)
-            print(s_p)
-            combined_prompts.append(tokenizer.apply_chat_template([{"role": "user", "content": a_p + s_p + ":"}], return_tensors="pt"))
+    #for a_p in prompts:
+    #    for s_p in story_prompts["prompts"][0:args.n_prompt_sets]:
+    #        combined_prompts.append(tokenizer.apply_chat_template([{"role": "user", "content": a_p + s_p + ":"}], return_tensors="pt"))
             
 
     #bg = AdaptiveNGramWarper(ngram)
 
     with open(args.out, "wt") as j_out:
-        for model_inputs in combined_prompts:
+        for b_p in prompts["prompts"][0:args.n_prompt_sets]:
+            logging.info(b_p)
+            model_inputs = tokenizer.apply_chat_template([{"role": "user", "content": b_p}], return_tensors="pt")
             for scaling in scalings:
                 logging.info(scaling)
                 bg = AdaptiveNGramWarper(ngram, scaling)
-
-                if args.top_k != 0:
-                    out = model.generate(model_inputs, max_new_tokens=256, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id, top_k=args.top_k)
-                else:
-                    out  = model.generate(model_inputs, max_new_tokens=256, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id)
+                logging.info(bg.ng)
+                out  = model.generate(model_inputs, max_new_tokens=256, output_logits=True, return_dict_in_generate=True, logits_processor=[bg], do_sample=args.do_sample, pad_token_id=tokenizer.eos_token_id)
                 decoded = tokenizer.batch_decode(out.sequences, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
                 logging.info(decoded)
-                input()
                 j_out.write(json.dumps({"text": decoded, "scaling_factor": bg.scaling_factors, "selected_was_weighted": bg.was_scaled, "ngram_weight_used": bg.weight_info_used})+"\n")
 
 

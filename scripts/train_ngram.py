@@ -37,12 +37,15 @@ if __name__ == "__main__":
     with open(args.text, "rt") as s_in:
         for line in s_in:
             j_line = json.loads(line)
+            """
             text_split.append(list(pad_sequence([str(i_id) for i_id in tokenizer(j_line["text"], add_special_tokens=False).input_ids],
                                                 pad_left=True,
                                                 left_pad_symbol = str(tokenizer.bos_token_id),
                                                 pad_right=True,
                                                 right_pad_symbol = str(tokenizer.eos_token_id),
                                                 n=args.max_n)))
+            """
+            text_split.append(list([str(i_id) for i_id in tokenizer(j_line["text"]).input_ids]))
 
         eg = list(everygrams(seq, max_len=3) for seq in text_split)
         vocab = list(flatten(s for s in text_split))
