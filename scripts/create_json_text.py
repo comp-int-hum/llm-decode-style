@@ -22,11 +22,15 @@ if __name__ == "__main__":
             text_split = [s.replace("\n"," ") for s in re.split("\n\n",text) if not any([c.isdigit() for c in s]) and len(s)>=args.min_chars and (s[0]!="[" and s[-1]!="]") and "CHAPTER" not in s]
     elif args.text_input.endswith(".csv"):
         text_split = []
+        text_buffer = []
         with open(args.text_input, "rt", newline="") as s_in:
             s_reader = csv.reader(s_in, delimiter="\t")
             for row in s_reader:
-                if row[1] == args.char_name and len(row[0]) >= args.min_chars and "[" not in row[0]:
-                    text_split.append(row[0].replace("\t", " "))
+                if args.char_name in row[1] and len(row[0]) >= args.min_chars and "[" not in row[0]:
+                    text_buffer.append(row[0].replace("\t", " ").strip())
+                    if text_buffer[-1][-1] in [".","!","?"] or (text_buffer[-1][-1] in ["'",'"'] and text_buffer[-1][-2] in [".","!","?"]):
+                        text_split.append(" ".join(text_buffer))
+                        text_buffer = []
 
     with open(args.out, "wt") as t_out:
         for c in text_split:

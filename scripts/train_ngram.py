@@ -46,6 +46,7 @@ if __name__ == "__main__":
                                                 n=args.max_n)))
             """
             text_split.append(list([str(i_id) for i_id in tokenizer(j_line["text"]).input_ids]))
+            print(text_split)
 
         eg = list(everygrams(seq, max_len=3) for seq in text_split)
         vocab = list(flatten(s for s in text_split))

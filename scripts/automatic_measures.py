@@ -12,6 +12,7 @@ import scipy
 from collections import Counter
 from collections import defaultdict
 from transformers import AutoTokenizer
+from itertools import islice
 
 def zipf_coef(tokens):
     word_counter = Counter(tokens)
@@ -55,6 +56,16 @@ def ngram_diversity(tokens, top_n=4):
     
     return float(sum(unique_len))/sum(gram_len)
 
+def repl(tokens, ls = [16,32,128]):
+    res = {l: 0 for l in ls}
+    for l in ls:
+        for timestep, token in enumerate(tokens):
+            context = tokens[max(0, timestep-l):timestep]
+            for t in context:
+                if t == token:
+                    res[l]+=1
+    return {l: c/(len(tokens)) for l,c in res.items()}
+
 
 def retokenize(orig_tok):
 	found_prefix = None
@@ -93,9 +104,10 @@ class eval_gen:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", help="text for original texts, open for open generation, instruct for prompted")
+    parser.add_argument("--mode", help="prompt, control, text, targets")
     parser.add_argument("--tokenizer", nargs="+", default=["spacy"])
     parser.add_argument("--input", help="jsonl to evaluate")
+    parser.add_argument("--repls", nargs="+", default = [16,32,128], help="repl ns")
     parser.add_argument("--output", help="Report out")
 
 
@@ -112,25 +124,129 @@ if __name__ == "__main__":
             if args.mode == "text":
                 tokens = []
                 d = []
-                reps = []
+                seg_repls = []
                 for line in eval_in:
                     j_line = json.loads(line)
-                    segment = c_tokenize(j_line["text"], tname, tk)
+                    segment = c_tokenize(j_line["text"]+" ", tname, tk)
                     tokens += segment
                     d.append(ngram_diversity(segment))
-                    #reps.append(rep(segment))
-                eval_out.write(json.dumps({"name": tname, "N": len(tokens), "Zipf": zipf_coef(tokens), "D_avg": sum(d)/len(d), "D_full": ngram_diversity(tokens)})+"\n")
+                    seg_repls.append(repl(segment))
+                    
+                repl_res = {l: 0 for l in args.repls}
+                for s_r in seg_repls:
+                    for l, r in s_r.items():
+                        repl_res[l] += r
+                print(repl_res)
+                fr = sum([rr/len(seg_repls) for rl, rr in repl_res.items()])/len(repl_res)
+                
+                
+                eval_out.write(json.dumps({"name": tname, "N": len(tokens), "Zipf": zipf_coef(tokens),"repl":fr, "D_avg": sum(d)/len(d), "D_full": ngram_diversity(tokens)})+"\n")
 
-            elif args.mode == "instruct":
+            elif args.mode == "prompt":
                 res_by_scaling = defaultdict(list)
+                d_by_scaling = defaultdict(list)
+                repl_by_scaling = defaultdict(list)
+                scaled_by_scaling = defaultdict(lambda: Counter())
                 for line in eval_in:
                     j_line = json.loads(line)
-                    generated = c_tokenize(j_line["text"].split("[/INST]")[1], tname, tk)
-                    print(generated)
-                    print(len(generated))
-                    print(len(j_line["selected_was_weighted"]))
-                    print(len(j_line["ngram_weight_used"]))
-                    input()
+                    text = c_tokenize(j_line["text"]+" ", tname, tk)
+                    res_by_scaling["".join(str(i) for i in j_line["scaling_factor"])] += text
+                    d_by_scaling["".join(str(i) for i in j_line["scaling_factor"])].append(ngram_diversity(text))
+                    repl_by_scaling["".join(str(i) for i in j_line["scaling_factor"])].append(repl(text))
+                    scaled_by_scaling["".join(str(i) for i in j_line["scaling_factor"])].update(j_line["ngram_weight_used"])
+                for scaling, text in res_by_scaling.items():
+                    print(scaling)
+                    repl_res = {l: 0 for l in args.repls}
+                    for s_r in repl_by_scaling[scaling]:
+                        for l, r in s_r.items():
+                            repl_res[l] += r
+                    print(repl_res)
+
+
+                    fr = sum([rr/len(repl_by_scaling[scaling]) for rl, rr in repl_res.items()])/len(repl_res)
+                        
+                    eval_out.write(json.dumps({"scalings": scaling, "name": tname, "N": len(text), "Zipf": zipf_coef(text), "repl": fr, "D_avg": sum(d_by_scaling[scaling])/len(d_by_scaling[scaling]), "D_full": ngram_diversity(text), "scaled_by_counts":scaled_by_scaling[scaling]})+"\n")
+
+            elif args.mode == "control":
+                def nread(f, n):
+                    lines = []
+                    for line in f:
+                        lines.append(line)
+                        if len(lines) == n:
+                            yield lines
+                            lines = []
+                    if lines:
+                        yield lines
+                        
+                tokens1 = []
+                tokens2 = []
+                tokens3 = []
+                d1 = []
+                d2 = []
+                d3 = []
+                seg_repls1 = []
+                seg_repls2 = []
+                seg_repls3 = []
+                for gen in nread(eval_in,3):
+                    j_line1 = json.loads(gen[0])
+                    j_line2 = json.loads(gen[1])
+                    j_line3 = json.loads(gen[2])
+                    
+                    segment1 = c_tokenize(j_line1["text"]+" ", tname, tk)
+                    segment2 = c_tokenize(j_line2["text"]+" ", tname, tk)
+                    segment3 = c_tokenize(j_line3["text"]+" ", tname, tk)
+
+                    
+                    tokens1 += segment1
+                    tokens2 += segment2
+                    tokens3 += segment3
+                    
+                    d1.append(ngram_diversity(segment1))
+                    d2.append(ngram_diversity(segment2))
+                    d3.append(ngram_diversity(segment3))
+                    
+                    seg_repls1.append(repl(segment1))
+                    seg_repls2.append(repl(segment2))
+                    seg_repls3.append(repl(segment3))
+
+                ts = [tokens1, tokens2, tokens3]
+                ds = [d1, d2, d3]
+                rs = [seg_repls1, seg_repls2, seg_repls3]
+
+                for seg_repls, tokens, d in zip(rs, ts, ds):
+                    
+                    repl_res = {l: 0 for l in args.repls}
+                    for s_r in seg_repls:
+                        for l, r in s_r.items():
+                            repl_res[l] += r
+                    print(repl_res)
+                
+                    fr = sum([rr/len(seg_repls) for rl, rr in repl_res.items()])/len(repl_res)
+                
+                    eval_out.write(json.dumps({"name": tname, "N": len(tokens), "Zipf": zipf_coef(tokens), "repl": fr, "D_avg": sum(d)/len(d), "D_full": ngram_diversity(tokens)})+"\n")                
+
+            elif args.mode == "targets":
+                tokens = []
+                d = []
+                seg_repls = []
+                for line in eval_in:
+                    j_line = json.loads(line)
+                    segment = c_tokenize(j_line["text"].replace("<newline>", " ")+" ", tname, tk)
+                    tokens += segment
+                    d.append(ngram_diversity(segment))
+                    seg_repls.append(repl(segment))
+
+                repl_res = {l: 0 for l in args.repls}
+                for s_r in seg_repls:
+                    for l, r in s_r.items():
+                        repl_res[l] += r
+                print(repl_res)
+                fr = sum([rr/len(seg_repls) for rl, rr in repl_res.items()])/len(repl_res)
+
+                
+                eval_out.write(json.dumps({"name": tname, "N": len(tokens), "Zipf": zipf_coef(tokens), "repl": fr, "D_avg": sum(d)/len(d), "D_full": ngram_diversity(tokens)})+"\n")
+                
+                    
                     
     
 """            
