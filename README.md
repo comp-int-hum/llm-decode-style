@@ -10,7 +10,7 @@ And produces generations like this (Target style: Charles Chesnutt's character J
 
 >In de mawnin' light of the quaint 1600s hamlet, John, a humbleedge Mars' Hill, Maine school graduate, stood astounded ashes amazed crowd gazed up en masse at the metallic apparition he held aloft- a pocketwatch. "This," John began, his voice wa'n't above a whisper, "is a means of keepin' track o' time, a essential component in managin' a more roots in de ground agricultural process." The crowd's quizzical expressions only grew denser, nary a soul comprehendin' the essence of John's mirac' er gadget. Perceivin' their struggle, he continued, "The world around us, it isn't just a collection o' rocks, water, an' earth. There's somethin' called science, a systematic method o' learnin' 'bout the natural workings o' the universe."
 
-Without additional computation or the fragility of prompting. 
+Without additional large-scale computation or the fragility of prompting. 
 
  The paper preprint can be [found on ArXiv](https://arxiv.org/pdf/2503.08550)
 
