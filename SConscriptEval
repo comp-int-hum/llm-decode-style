@@ -1,0 +1,83 @@
+import os
+import os.path
+import logging
+import random
+import subprocess
+import shlex
+import gzip
+import re
+import functools
+import time
+import imp
+import sys
+import json
+import steamroller
+
+# workaround needed to fix bug with SCons and the pickle module
+del sys.modules['pickle']
+sys.modules['pickle'] = imp.load_module('pickle', *imp.find_module('pickle'))
+import pickle
+
+# Variables control various aspects of the experiment.	Note that you have to declare
+# any variables you want to use here, with reasonable default values, but when you want
+# to change/override the default values, do so in the "custom.py" file (see it for an
+# example, changing the number of folds).
+vars = Variables("custom.py")
+vars.AddVariables(
+    ("OUTPUT_WIDTH", "", 5000),
+    ("TEXTS","", ["remus","dooley","Biglow","Todd","Remus","Julius","Huck"]),
+    ("MAX_N","", 4),
+    ("GEN_MODEL", "", "mistralai/Mistral-7B-Instruct-v0.2"),
+    ("GEN_DECODING","","sample"),
+    ("EVAL_MODELS","", ["openai-community/gpt2-large"]),
+    ("NG_SCALINGS", "", ["ng_scalings.json"]),
+    ("RANDOM_STATE", "", 20),
+    ("CHUNK_LEN", "", 32),
+    ("USE_GRID","", 0),
+    ("GRID_TYPE","", "slurm"),
+    #("GRID_QUEUE","", "cpu"),
+    #("GRID_ACCOUNT","", ""),
+    ("GRID_GPU_COUNT","", 0),
+    ("GRID_MEMORY", "", "64G"),
+    ("GRID_LABEL", "", "NGStyle"),
+    ("GRID_TIME", "", "48:00:00"),
+)
+
+env = Environment(
+    variables=vars,
+    ENV=os.environ,
+    tools=[steamroller.generate],
+    
+    BUILDERS={
+        "TrainNgram": Builder(action="python scripts/train_ngram.py --text ${SOURCES[0]} --tokenizer ${MODEL} --output ${TARGETS[0]} --max_n ${MAX_N}"),
+        "NgramPerplexity": Builder(
+            action="python scripts/reflect_perplexity.py --input ${SOURCES[0]} --ngram ${SOURCES[1]} --scalings ${SOURCES[2]} --output ${TARGETS[0]} --chunk_len ${CHUNK_LEN}"
+        ),
+        "ProduceElbow": Builder(
+            action="python scripts/produce_elbow.py --p_in ${SOURCES[0]} --r_in ${SOURCES[1]} --target ${SOURCES[2]} --output ${TARGETS[0]}"
+        )
+    }   
+)
+
+split_texts = [env.File(f"work/{text}/text.jsonl") for text in env["TEXTS"]]
+t_ppls = [env.File(f"work/{text}/perplexities.jsonl") for text in env["TEXTS"]]
+g_ppls = [env.File(f"work/{env['GEN_MODEL']}/{text}/{env['GEN_DECODING']}/perplexities.jsonl") for text in env["TEXTS"]]
+for model in env["EVAL_MODELS"]:
+    for scalings in env["NG_SCALINGS"]:
+        scaling = env.File(f"data/{scalings}")
+        for text_name, text_in, t_ppl, g_ppl in zip(env["TEXTS"], split_texts, t_ppls, g_ppls):
+            grams = env.TrainNgram(["work/reflections/${MODEL}/${TEXT_NAME}/ngram.pkl"], text_in, MODEL=model, TEXT_NAME=text_name)
+            reflection = env.NgramPerplexity(
+                ["work/reflections/${MODEL}/${TEXT_NAME}/reflection.jsonl"], 
+                [text_in, grams, scaling],
+                MODEL=model,
+                TEXT_NAME=text_name)
+            elbow = env.ProduceElbow(
+                ["work/reflections/${MODEL}/${TEXT_NAME}/${GEN}_${DECODE}_elbow.png"],
+                [g_ppl, reflection, t_ppl],
+                MODEL=model,
+                TEXT_NAME=text_name,
+                GEN = env["GEN_MODEL"],
+                DECODE = env["GEN_DECODING"]
+            )
+

@@ -45,7 +45,7 @@ vars.AddVariables(
     ("USE_GRID","", 0),
     ("GRID_TYPE","", "slurm"),
     #("GRID_QUEUE","", "cpu"),
-    #("GRID_ACCOUNT","", "tlippi1_gpu"),
+    #("GRID_ACCOUNT","", ""),
     ("GRID_GPU_COUNT","", 0),
     ("GRID_MEMORY", "", "64G"),
     ("GRID_LABEL", "", "NGStyle"),
