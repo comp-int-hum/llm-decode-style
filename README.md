@@ -16,13 +16,14 @@ The models used for the paper experiments include GPT-2, Llama3, and Mistral V0.
 
 The experiments are organized using the Steamroller extensions of the SCONS build system. The training and evaluation are split into two scons files:
 
-    1. **SConstruct:** Generates the experiment data, trains the ngram scaling models, generates control and experiment texts.
-    2. **SConscriptEval:** Produces the perplexity-based evaluation and scaling-selection images discussed in the paper. 
+    1. SConstruct: Generates the experiment data, trains the ngram scaling models, generates control and experiment texts.
+    2. SConscriptEval: Produces the perplexity-based evaluation and scaling-selection images discussed in the paper. 
 
 These two should be run in order. This looks like:
 
 ```bash
 scons -f SConstruct -Q
-scons -f SConscriptEval
+scons -f SConscriptEval -Q
 ```
+The addition of the -n switch will perform a scons "dry run"
 Currently, the table stitching scripts are outside of this pipeline -- they are straightforward jsonl > pandas df > latex converters. 
